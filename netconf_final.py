@@ -4,7 +4,8 @@ from ncclient.transport.errors import SSHError, AuthenticationError
 import xml.etree.ElementTree as ET # ใช้สำหรับ Parse XML
 
 basicauth = ("admin", "cisco")
-studentID = "66070046"
+studentID = "66070046" # TODO: ตรวจสอบรหัสนักศึกษา
+
 def get_netconf_params(target_ip):
     return {
         "host": target_ip,
@@ -19,17 +20,17 @@ def get_netconf_params(target_ip):
 def create(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
-    # XML Payload for NETCONF
+    # --- แก้ไข: เพิ่ม nc:operation="create" เพื่อป้องกันการสร้างทับ ---
     xml_config = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
-        <interface>
+        <interface xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="create">
           <name>Loopback{studentID}</name>
           <type xmlns:ianaift="urn:ietf:params:xml:ns:yang:iana-if-type">ianaift:softwareLoopback</type>
           <enabled>true</enabled>
           <ipv4 xmlns="urn:ietf:params:xml:ns:yang:ietf-ip">
             <address>
-              <ip>172.0.46.1</ip>
+              <ip>172.30.30.1</ip>
               <netmask>255.255.255.0</netmask>
             </address>
           </ipv4>
@@ -40,15 +41,16 @@ def create(target_ip):
     
     try:
         with manager.connect(**netconf_params) as m:
-            m.edit_config(target='running', config=xml_config, default_operation="merge")
+            # --- แก้ไข: ลบ default_operation="merge" ออก ---
+            m.edit_config(target='running', config=xml_config)
             return f"Interface loopback {studentID} is created successfully (using Netconf)"
     except Exception as e:
+        # ถ้าสร้างซ้ำ (data-exists) จะ Error และเข้าที่นี่
         return f"Cannot create: Interface loopback {studentID} (Error: {e}) (using Netconf)"
 
 def delete(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
-    # XML Payload for NETCONF (using operation="delete")
     xml_config = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
@@ -113,9 +115,8 @@ def disable(target_ip):
 def status(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
-    # XML Filter to get operational state
+    # --- แก้ไข: ลบ <filter> ที่ซ้อนกันออก ---
     xml_filter = f"""
-    <filter type="subtree">
       <interfaces-state xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
         <interface>
           <name>Loopback{studentID}</name>
@@ -123,22 +124,20 @@ def status(target_ip):
           <admin-status/>
         </interface>
       </interfaces-state>
-    </filter>
     """
     
     try:
         with manager.connect(**netconf_params) as m:
+            # ncclient จะหุ้ม <filter type="subtree"> ให้เอง
             data_xml = m.get(filter=xml_filter)
             
-            # Parse XML data (นี่คือส่วนที่ต่างจาก RESTCONF)
-            # เราต้องหา tag 'data'
+            # Parse XML data
             root = ET.fromstring(str(data_xml))
             data_element = root.find('{urn:ietf:params:xml:ns:netconf:base:1.0}data')
             
             if data_element is None:
                  return f"No Interface loopback {studentID} (checked by Netconf)"
                  
-            # หา interface state
             ns = {'if': 'urn:ietf:params:xml:ns:yang:ietf-interfaces'}
             interface = data_element.find(f'.//if:interface[if:name="Loopback{studentID}"]', ns)
             
