@@ -1,32 +1,22 @@
 from ncclient import manager
 from ncclient.operations.errors import TimeoutExpiredError
 from ncclient.transport.errors import SSHError, AuthenticationError
-import xml.etree.ElementTree as ET
-import os # <-- IMPORT
-from dotenv import load_dotenv # <-- IMPORT
+import xml.etree.ElementTree as ET # ใช้สำหรับ Parse XML
 
-load_dotenv() # <-- LOAD .ENV
-
-# --- MODIFIED: Read credentials from .env ---
-ROUTER_USERNAME = os.environ.get("ROUTER_USERNAME")
-ROUTER_PASSWORD = os.environ.get("ROUTER_PASSWORD")
-# (No hardcoded basicauth or studentID needed here)
-
+basicauth = ("admin", "cisco")
+studentID = "66070046"
 def get_netconf_params(target_ip):
-    """Helper function to build connection parameters."""
     return {
         "host": target_ip,
         "port": 830,
-        "username": ROUTER_USERNAME, # <-- Use var from .env
-        "password": ROUTER_PASSWORD, # <-- Use var from .env
+        "username": basicauth[0],
+        "password": basicauth[1],
         "hostkey_verify": False,
         "device_params": {"name": "csr"},
         "timeout": 10
     }
 
-# --- MODIFIED: All functions now accept 'studentID' ---
-
-def create(target_ip, studentID):
+def create(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
     # XML Payload for NETCONF
@@ -34,12 +24,12 @@ def create(target_ip, studentID):
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
         <interface>
-          <name>Loopback{studentID}</name> 
+          <name>Loopback{studentID}</name>
           <type xmlns:ianaift="urn:ietf:params:xml:ns:yang:iana-if-type">ianaift:softwareLoopback</type>
           <enabled>true</enabled>
           <ipv4 xmlns="urn:ietf:params:xml:ns:yang:ietf-ip">
             <address>
-              <ip>172.30.30.1</ip>
+              <ip>172.0.46.1</ip>
               <netmask>255.255.255.0</netmask>
             </address>
           </ipv4>
@@ -55,9 +45,10 @@ def create(target_ip, studentID):
     except Exception as e:
         return f"Cannot create: Interface loopback {studentID} (Error: {e}) (using Netconf)"
 
-def delete(target_ip, studentID):
+def delete(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
+    # XML Payload for NETCONF (using operation="delete")
     xml_config = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
@@ -75,9 +66,10 @@ def delete(target_ip, studentID):
     except Exception as e:
         return f"Cannot delete: Interface loopback {studentID} (Error: {e}) (using Netconf)"
 
-def enable(target_ip, studentID):
+def enable(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
+    # XML Payload (merge 'enabled: true')
     xml_config = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
@@ -96,9 +88,10 @@ def enable(target_ip, studentID):
     except Exception as e:
         return f"Cannot enable: Interface loopback {studentID} (Error: {e}) (using Netconf)"
 
-def disable(target_ip, studentID):
+def disable(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
+    # XML Payload (merge 'enabled: false')
     xml_config = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
@@ -117,9 +110,10 @@ def disable(target_ip, studentID):
     except Exception as e:
         return f"Cannot shutdown: Interface loopback {studentID} (Error: {e}) (using Netconf)"
 
-def status(target_ip, studentID):
+def status(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
+    # XML Filter to get operational state
     xml_filter = f"""
     <filter type="subtree">
       <interfaces-state xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
@@ -136,12 +130,15 @@ def status(target_ip, studentID):
         with manager.connect(**netconf_params) as m:
             data_xml = m.get(filter=xml_filter)
             
+            # Parse XML data (นี่คือส่วนที่ต่างจาก RESTCONF)
+            # เราต้องหา tag 'data'
             root = ET.fromstring(str(data_xml))
             data_element = root.find('{urn:ietf:params:xml:ns:netconf:base:1.0}data')
             
             if data_element is None:
                  return f"No Interface loopback {studentID} (checked by Netconf)"
                  
+            # หา interface state
             ns = {'if': 'urn:ietf:params:xml:ns:yang:ietf-interfaces'}
             interface = data_element.find(f'.//if:interface[if:name="Loopback{studentID}"]', ns)
             
