@@ -1,6 +1,6 @@
 from netmiko import ConnectHandler
 from pprint import pprint
-import re # Import regex
+import re # <-- Import Regex มาใช้งาน
 
 # TODO: ควรย้ายไปเก็บใน .env
 username = "admin"
@@ -9,53 +9,44 @@ password = "cisco"
 def get_device_params(target_ip):
     """
     Helper function เพื่อสร้าง params ในการเชื่อมต่อ
-    (ใช้ cisco_ios แทน telnet เพื่อให้ใช้ SSH ได้)
+    (เพิ่ม 'secret' เข้าไป เพื่อให้แน่ใจว่าเข้า enable mode)
     """
     return {
         "device_type": "cisco_ios",
         "ip": target_ip,
         "username": username,
         "password": password,
+        "secret": password, # <-- เพิ่มบรรทัดนี้
     }
 
-# ---  FIX: แก้ไข get_motd ให้เสถียรด้วย logic ใหม่ ---
+# ---  FIX 3: แก้ไข get_motd ให้ใช้ 'show run' + 'Regex' ---
 def get_motd(target_ip):
     """
-    ใช้ Netmiko และ 'show banner motd'
-    (ใช้ logic การ parse ใหม่ที่ทนทานกว่าเดิม)
+    ใช้ Netmiko และ 'show running-config'
+    (Parse ด้วย Regex ซึ่งเสถียรที่สุด)
     """
     device_params = get_device_params(target_ip)
+    
     try:
         with ConnectHandler(**device_params) as ssh:
-            # ใช้ 'show banner motd' ซึ่งตรงไปตรงมา และไม่ยุ่งกับ textfsm
-            result = ssh.send_command("show banner motd")
+            # รัน 'show run' แบบธรรมดา (ไม่ใช้ textfsm)
+            result = ssh.send_command("show running-config")
             
-            if "% No banner configured" in result or not result:
+            # --- LOGIC ใหม่: ใช้ Regex ---
+            #
+            # Regex นี้จะหา "banner motd (ตัวคั่น1)(ข้อความ)(ตัวคั่น1)"
+            # re.DOTALL ทำให้ . (dot) สามารถหมายถึง \n (ขึ้นบรรทัดใหม่) ได้
+            #
+            match = re.search(r"banner motd (.)(.*?)\1", result, re.DOTALL)
+            
+            if match:
+                # match.group(2) คือ (.*?) หรือ "ข้อความ" ที่อยู่ข้างใน
+                message = match.group(2).strip() # .strip() เพื่อลบ \n ที่ติดมา
+                return message
+            else:
+                # ถ้า Regex หาไม่เจอเลย
                 return "Error: No MOTD Configured"
-            
-            # --- LOGIC ใหม่ เริ่มตรงนี้ ---
-            
-            # 1. หาจุดเริ่มต้นของ MOTD (ตัด header ทิ้ง)
-            try:
-                # หาบรรทัดใหม่บรรทัดแรก
-                first_newline = result.index('\n')
-                # เอาทุกอย่าง *หลัง* header
-                message_with_footer = result[first_newline+1:]
-            except ValueError:
-                return "Error: Could not parse MOTD header"
-
-            # 2. ตัด footer (บรรทัดสุดท้าย) ทิ้ง
-            lines = message_with_footer.splitlines()
-            
-            if not lines:
-                return "" # MOTD ว่างเปล่า (เช่น มีแค่ header กับ footer)
-                
-            # MOTD คือทุกบรรทัด *ยกเว้น* บรรทัดสุดท้าย (ที่เป็นตัวคั่น)
-            motd_lines = lines[:-1]
-            message = "\n".join(motd_lines)
-            
-            return message
-            # --- LOGIC ใหม่ จบตรงนี้ ---
+            # --- จบ LOGIC Regex ---
             
     except Exception as e:
         return f"Error connecting to {target_ip}: {e}"
@@ -63,14 +54,16 @@ def get_motd(target_ip):
 
 # --- (ฟังก์ชัน gigabit_status เหมือนเดิม) ---
 def gigabit_status(target_ip):
+    # (โค้ด gigabit_status เดิมของคุณ)
     device_params = {
         "device_type": "cisco_ios_telnet",
         "ip": target_ip,
         "username": username,
         "password": password,
+        "secret": password, # <-- เพิ่ม secret ตรงนี้ด้วย
     }
 
-    ans = "" # String สำหรับแสดงผล
+    ans = "" 
     try:
         with ConnectHandler(**device_params) as ssh:
             gi_up, gi_down, gi_admin_down = 0, 0, 0
