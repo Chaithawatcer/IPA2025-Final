@@ -17,10 +17,11 @@ def get_netconf_params(target_ip):
         "timeout": 10
     }
 
+# ในไฟล์ netconf_final.py
+
 def create(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
-    # --- แก้ไข: เพิ่ม nc:operation="create" เพื่อป้องกันการสร้างทับ ---
     xml_config = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
@@ -41,12 +42,19 @@ def create(target_ip):
     
     try:
         with manager.connect(**netconf_params) as m:
-            # --- แก้ไข: ลบ default_operation="merge" ออก ---
             m.edit_config(target='running', config=xml_config)
             return f"Interface loopback {studentID} is created successfully (using Netconf)"
+            
+    # --- นี่คือส่วนที่แก้ไข ---
     except Exception as e:
-        # ถ้าสร้างซ้ำ (data-exists) จะ Error และเข้าที่นี่
-        return f"Cannot create: Interface loopback {studentID} (Error: {e}) (using Netconf)"
+        error_message = str(e)
+        # 'data-exists' คือ Error มาตรฐานของ NETCONF เมื่อข้อมูลมีอยู่แล้ว
+        if 'data-exists' in error_message:
+            return f"Cannot create: Interface loopback {studentID}"
+        else:
+            # Error อื่นๆ
+            return f"Cannot create: Interface loopback {studentID} (Error: {e}) (using Netconf)"
+    # ------------------------
 
 def delete(target_ip):
     netconf_params = get_netconf_params(target_ip)
