@@ -59,10 +59,13 @@ def create(target_ip):
 def delete(target_ip):
     netconf_params = get_netconf_params(target_ip)
     
+    # --- แก้ไข: ---
+    # 1. เพิ่ม xmlns:nc="..." (ประกาศ namespace)
+    # 2. เปลี่ยน operation="delete" เป็น nc:operation="delete" (เรียกใช้ namespace)
     xml_config = f"""
     <config xmlns="urn:ietf:params:xml:ns:netconf:base:1.0">
       <interfaces xmlns="urn:ietf:params:xml:ns:yang:ietf-interfaces">
-        <interface operation="delete">
+        <interface xmlns:nc="urn:ietf:params:xml:ns:netconf:base:1.0" nc:operation="delete">
           <name>Loopback{studentID}</name>
         </interface>
       </interfaces>
