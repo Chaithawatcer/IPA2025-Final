@@ -1,0 +1,16 @@
+---
+- name: CONFIGURE MOTD BANNER
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_connection: ansible.netcommon.network_cli
+    ansible_network_os: cisco.ios.ios
+    ansible_become: yes
+    ansible_become_method: enable
+  tasks:
+    - name: CONFIGURE MOTD
+      cisco.ios.ios_banner:
+        banner: motd
+        # 'motd_message' จะถูกส่งมาจาก Python
+        text: "{{ motd_message }}"
+        state: present
