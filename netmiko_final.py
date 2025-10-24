@@ -1,5 +1,6 @@
 from netmiko import ConnectHandler
 from pprint import pprint
+import re # Import regex
 
 # TODO: ควรย้ายไปเก็บใน .env
 username = "admin"
@@ -17,49 +18,51 @@ def get_device_params(target_ip):
         "password": password,
     }
 
-# ---  FIX 1: แก้ไข get_motd ให้เสถียร ---
+# ---  FIX: แก้ไข get_motd ให้เสถียรด้วย logic ใหม่ ---
 def get_motd(target_ip):
     """
     ใช้ Netmiko และ 'show banner motd'
-    เพื่อดึงค่า MOTD (วิธีนี้เสถียรกว่า 'show run')
+    (ใช้ logic การ parse ใหม่ที่ทนทานกว่าเดิม)
     """
     device_params = get_device_params(target_ip)
     try:
         with ConnectHandler(**device_params) as ssh:
-            # ใช้ 'show banner motd' จะตรงไปตรงมาและเร็วกว่า
+            # ใช้ 'show banner motd' ซึ่งตรงไปตรงมา และไม่ยุ่งกับ textfsm
             result = ssh.send_command("show banner motd")
             
-            # ผลลัพธ์มี 2 แบบ:
-            # 1. ไม่มี: "% No banner configured"
-            # 2. มี: "Enter TEXT message. End with the character 'c'.\nHello\nc"
-            
-            if "% No banner configured" in result:
+            if "% No banner configured" in result or not result:
                 return "Error: No MOTD Configured"
             
-            # Split ผลลัพธ์เป็นบรรทัด
-            lines = result.splitlines()
+            # --- LOGIC ใหม่ เริ่มตรงนี้ ---
             
-            # ถ้ามีน้อยกว่า 3 บรรทัด (header, body, footer)
-            # แสดงว่า MOTD ว่างเปล่า หรือ parse ผิด
-            if len(lines) < 3:
-                return "Error: No MOTD Configured (empty)"
+            # 1. หาจุดเริ่มต้นของ MOTD (ตัด header ทิ้ง)
+            try:
+                # หาบรรทัดใหม่บรรทัดแรก
+                first_newline = result.index('\n')
+                # เอาทุกอย่าง *หลัง* header
+                message_with_footer = result[first_newline+1:]
+            except ValueError:
+                return "Error: Could not parse MOTD header"
 
-            # MOTD คือทุกบรรทัด ยกเว้นบรรทัดแรก (header) และบรรทัดสุดท้าย (delimiter)
-            motd_lines = lines[1:-1]
-            message = "\n".join(motd_lines) # เอามาต่อกัน (เผื่อมีหลายบรรทัด)
+            # 2. ตัด footer (บรรทัดสุดท้าย) ทิ้ง
+            lines = message_with_footer.splitlines()
+            
+            if not lines:
+                return "" # MOTD ว่างเปล่า (เช่น มีแค่ header กับ footer)
+                
+            # MOTD คือทุกบรรทัด *ยกเว้น* บรรทัดสุดท้าย (ที่เป็นตัวคั่น)
+            motd_lines = lines[:-1]
+            message = "\n".join(motd_lines)
             
             return message
+            # --- LOGIC ใหม่ จบตรงนี้ ---
             
     except Exception as e:
         return f"Error connecting to {target_ip}: {e}"
 
 
-# --- FIX 2: แก้ไข gigabit_status ให้แสดงผลเฉพาะ Gi ---
+# --- (ฟังก์ชัน gigabit_status เหมือนเดิม) ---
 def gigabit_status(target_ip):
-    """
-    แก้ไขให้รับ target_ip และแก้การแสดงผล string
-    """
-    # (ใช้ params เดิมของคุณที่เป็น telnet)
     device_params = {
         "device_type": "cisco_ios_telnet",
         "ip": target_ip,
@@ -70,7 +73,6 @@ def gigabit_status(target_ip):
     ans = "" # String สำหรับแสดงผล
     try:
         with ConnectHandler(**device_params) as ssh:
-            # (ผมเดาว่าคุณเพิ่มตัวแปรนับ Lo มาเอง)
             gi_up, gi_down, gi_admin_down = 0, 0, 0
             lo_up, lo_down, lo_admin_down = 0, 0, 0
             
@@ -78,11 +80,7 @@ def gigabit_status(target_ip):
             for status in result:
                 
                 if status["interface"].startswith("GigabitEthernet"):
-                    # --- THIS IS THE FIX ---
-                    # ต่อ string เฉพาะ interface ที่เป็น Gi เท่านั้น
                     ans += f"{status['interface']} {status['link_status']}, " 
-                    # ---
-                    
                     if status['link_status'] == "up":
                         gi_up += 1
                     elif status['link_status'] == "down":
@@ -91,7 +89,6 @@ def gigabit_status(target_ip):
                         gi_admin_down += 1
                 
                 elif status["interface"].startswith("Loopback"):
-                    # (ส่วนนับ Loopback ของคุณ)
                     if status['link_status'] == "up":
                         lo_up += 1
                     elif status['link_status'] == "down":
@@ -99,13 +96,11 @@ def gigabit_status(target_ip):
                     elif status['link_status'] == "administratively down":
                         lo_admin_down += 1
 
-            # ลบ (,) ตัวสุดท้ายออก
             if ans:
                 ans = ans[:-2] 
             else:
                 ans = "No Gigabit Interfaces found"
             
-            # (ใช้ format สรุปผลแบบที่คุณทำไว้ใน log)
             ans_summary = f"Gi: {gi_up} up, {gi_down} down, {gi_admin_down} admin-down | Lo: {lo_up} up, {lo_down} down, {lo_admin_down} admin-down"
             
             return f"{ans} -> {ans_summary}"
