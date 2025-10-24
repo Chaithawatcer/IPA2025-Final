@@ -1,0 +1,23 @@
+---
+- name: AUTOMATIC BACKUP OF RUNNING-CONFIG
+  hosts: all
+  gather_facts: false
+  vars:
+    ansible_connection: ansible.netcommon.network_cli
+    ansible_network_os: cisco.ios.ios
+    ansible_become: yes
+    ansible_become_method: enable
+  tasks:
+    - name: DISPLAYING THE RUNNING-CONFIG
+      cisco.ios.ios_command:
+        commands:
+          - show running-config
+      register: config
+
+    - name: SAVE OUTPUT TO ./backups/
+      copy:
+        content: "{{ config.stdout[0] }}"
+        # 'student_id' และ 'inventory_hostname' (IP) จะถูกส่งมา
+        dest: "backups/show_run_{{ student_id }}_{{ inventory_hostname }}.txt"
+      # สั่งให้รัน task นี้ที่เครื่องที่รันสคริปต์ (localhost)
+      delegate_to: localhost
