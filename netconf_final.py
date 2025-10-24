@@ -128,8 +128,11 @@ def status(target_ip):
     
     try:
         with manager.connect(**netconf_params) as m:
-            # ncclient จะหุ้ม <filter type="subtree"> ให้เอง
-            data_xml = m.get(filter=xml_filter)
+            
+            # --- นี่คือจุดที่แก้ไขล่าสุด ---
+            # เปลี่ยนจาก filter=xml_filter
+            # เป็น filter=('subtree', xml_filter)
+            data_xml = m.get(filter=('subtree', xml_filter))
             
             # Parse XML data
             root = ET.fromstring(str(data_xml))
