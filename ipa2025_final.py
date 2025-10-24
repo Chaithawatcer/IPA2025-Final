@@ -20,7 +20,8 @@ print(f"Current Room ID: {roomIdToGetMessages}")
 
 # --- NEW: Define project constants ---
 # TODO: เปลี่ยนเป็นรหัสนักศึกษาของคุณ (จากในภาพคือ 66070046)
-STUDENT_ID = "66070046" 
+STUDENT_ID = "66070046"
+studentID = STUDENT_ID  # สำหรับ restconf_final.py
 VALID_IPS = ["10.0.15.61", "10.0.15.62", "10.0.15.63", "10.0.15.64", "10.0.15.65", "10.0.15.45"]
 
 # --- NEW: State variables for the bot ---
@@ -108,17 +109,19 @@ while True:
                     if not current_method:
                         responseMessage = "Error: No method specified"
                     
+                    # --- EXECUTION: RESTCONF (FIXED) ---
                     elif current_method == "restconf":
                         if command == "create":
-                            responseMessage = restconf_final.create(target_ip)
+                            # ส่ง STUDENT_ID เข้าไปด้วย
+                            responseMessage = restconf_final.create(target_ip, STUDENT_ID)
                         elif command == "delete":
-                            responseMessage = restconf_final.delete(target_ip)
+                            responseMessage = restconf_final.delete(target_ip, STUDENT_ID)
                         elif command == "enable":
-                            responseMessage = restconf_final.enable(target_ip)
+                            responseMessage = restconf_final.enable(target_ip, STUDENT_ID)
                         elif command == "disable":
-                            responseMessage = restconf_final.disable(target_ip)
+                            responseMessage = restconf_final.disable(target_ip, STUDENT_ID)
                         elif command == "status":
-                            responseMessage = restconf_final.status(target_ip)
+                            responseMessage = restconf_final.status(target_ip, STUDENT_ID)
 
                     elif current_method == "netconf":
                         if command == "create":
