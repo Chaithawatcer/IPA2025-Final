@@ -158,20 +158,18 @@ while True:
 
         # 6. --- Post the message to Webex ---
         
-        # ถ้าไม่มี responseMessage (เช่น บอทเจอข้อความตัวเอง) ก็ไม่ต้องทำอะไร
         if not responseMessage:
             continue
             
-        # ตรวจสอบว่า command คือ showrun และสำเร็จหรือไม่
         command_to_check = parts[1].lower() if len(parts) >= 2 else ""
         target_ip_for_file = parts[0].lower() if len(parts) >= 2 else ""
 
-        if command_to_check == "showrun" and responseMessage == "ok":
-            print(f"Sending show running config from {target_ip_for_file}")
-            # --- MODIFIED: Dynamic filename ---
-            filename = f"./backups/show_run_{STUDENT_ID}_{target_ip_for_file}.txt"
-            
-            try:
+        try:
+            if command_to_check == "showrun" and responseMessage == "ok":
+                # --- Block สำหรับส่งไฟล์ (showrun) ---
+                print(f"Sending show running config from {target_ip_for_file}")
+                filename = f"./backups/show_run_{STUDENT_ID}_{target_ip_for_file}.txt"
+                
                 with open(filename, "rb") as fileobject:
                     postData = {
                         "roomId": roomIdToGetMessages,
@@ -183,32 +181,43 @@ while True:
                         "Authorization": f"Bearer {ACCESS_TOKEN}",
                         "Content-Type": postData.content_type,
                     }
-            except FileNotFoundError:
-                print(f"Error: Backup file {filename} not found.")
-                responseMessage = f"Error: Ansible OK, but backup file {filename} not found."
-                # Fallback to text message
-                command_to_check = "fallback" # บังคับให้ไปที่ else
+                    
+                    r = requests.post(
+                        "https://webexapis.com/v1/messages",
+                        data=postData,
+                        headers=HTTPHeaders,
+                    )
 
-        if command_to_check != "showrun" or responseMessage != "ok":
-            postData = {"roomId": roomIdToGetMessages, "text": responseMessage}
-            postData = json.dumps(postData)
-            HTTPHeaders = {
-                "Authorization": f"Bearer {ACCESS_TOKEN}",
-                "Content-Type": "application/json",
-            }
-
-        # Send the POST request
-        try:
-            r = requests.post(
-                "https://webexapis.com/v1/messages",
-                data=postData,
-                headers=HTTPHeaders,
-            )
-            # หลังโพสต์แล้ว ให้ set last_message_id เป็นของบอท
-            # เพื่อป้องกันบอทอ่านข้อความตัวเองในรอบถัดไป
+            else:
+                # --- Block สำหรับส่งข้อความธรรมดา ---
+                postData = {"roomId": roomIdToGetMessages, "text": responseMessage}
+                postData = json.dumps(postData)
+                HTTPHeaders = {
+                    "Authorization": f"Bearer {ACCESS_TOKEN}",
+                    "Content-Type": "application/json",
+                }
+                
+                r = requests.post(
+                    "https://webexapis.com/v1/messages",
+                    data=postData,
+                    headers=HTTPHeaders,
+                )
+            
+            # --- จัดการ Response หลังส่ง ---
             if r.status_code == 200:
                 last_message_id = r.json()["id"]
             else:
-                 print(f"Error posting message: {r.status_code} {r.text}")
+                print(f"Error posting message: {r.status_code} {r.text}")
+
+        except FileNotFoundError:
+            print(f"Error: Backup file {filename} not found.")
+            # ส่ง error กลับไปที่ Webex ว่าหาไฟล์ไม่เจอ
+            error_msg = f"Error: Ansible OK, but backup file {filename} not found."
+            postData = {"roomId": roomIdToGetMessages, "text": error_msg}
+            postData = json.dumps(postData)
+            HTTPHeaders = {"Authorization": f"Bearer {ACCESS_TOKEN}", "Content-Type": "application/json"}
+            requests.post("https://webexapis.com/v1/messages", data=postData, headers=HTTPHeaders)
+
         except Exception as e:
+            # Error ทั่วไป (เช่น I/O closed file ถ้าโค้ดผิด, หรือ network error)
             print(f"Error (Post Message): {e}")
